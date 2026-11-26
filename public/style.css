@@ -1,0 +1,53 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  font-family: system-ui, sans-serif; background: #1b1b2f; color: #f2f2f7;
+  text-align: center; padding: 16px;
+}
+section { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
+[hidden] { display: none !important; }
+h1 { margin: 0; font-size: 2rem; }
+.code { font-size: 6rem; font-weight: 800; letter-spacing: .3em; color: #ffd166; }
+input, textarea, button {
+  font-size: 1.2rem; padding: 14px 18px; border-radius: 12px; border: none;
+  width: 100%; max-width: 360px; font-family: inherit;
+}
+textarea { resize: none; height: 110px; }
+button { background: #06d6a0; color: #10201c; font-weight: 700; cursor: pointer; }
+button:disabled { background: #3b3b5c; color: #8a8aa8; cursor: not-allowed; }
+.players { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; max-width: 800px; }
+.player { background: #2e2e4d; padding: 12px 20px; border-radius: 999px; font-size: 1.4rem; }
+.error { color: #ff6b6b; min-height: 1.4em; }
+.muted { color: #9a9ab5; }
+.question { font-size: 2.4rem; font-weight: 800; max-width: 900px; line-height: 1.25; }
+.timer { font-size: 3rem; font-weight: 800; color: #ffd166; }
+.answers, .board, .options { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 800px; }
+.answer { background: #2e2e4d; padding: 16px 24px; border-radius: 16px; font-size: 1.6rem; }
+.answer.top { outline: 3px solid #ffd166; }
+.answer .meta { font-size: 1.1rem; color: #9a9ab5; margin-top: 6px; }
+.answer.top .meta { color: #ffd166; }
+.row { display: flex; justify-content: space-between; background: #2e2e4d; padding: 14px 24px; border-radius: 14px; font-size: 1.5rem; }
+.row.first { background: #ffd166; color: #1b1b2f; font-weight: 800; }
+.option { background: #2e2e4d; color: #f2f2f7; text-align: left; max-width: none; font-weight: 500; }
+.option:active { background: #06d6a0; color: #10201c; }
+.option:disabled { background: #2e2e4d; color: #f2f2f7; opacity: .5; }
+.score { font-size: 1.6rem; color: #ffd166; font-weight: 700; min-height: 1.6em; }
+@media (max-width: 600px) { .code { font-size: 4rem; } .question { font-size: 1.6rem; } }
+
+/* ---- Этап 4: оформление и анимации ---- */
+@keyframes pop { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+section:not([hidden]) { animation: pop .35s ease; }
+.answer { animation: pop .45s ease both; }
+.row { animation: pop .4s ease both; }
+.timer.urgent { color: #ff6b6b; animation: pulse 1s infinite; }
+.logo {
+  font-size: 3rem; font-weight: 900; letter-spacing: .04em;
+  background: linear-gradient(90deg, #ffd166, #ef476f, #06d6a0);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.rounds { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.chip { width: auto; padding: 10px 18px; background: #2e2e4d; color: #f2f2f7; font-weight: 600; }
+.chip.on { background: #ffd166; color: #1b1b2f; }
+.mute { position: fixed; top: 12px; right: 12px; width: auto; padding: 8px 14px; background: #2e2e4d; color: #f2f2f7; }

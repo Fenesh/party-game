@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Играть</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <section id="join">
+    <div class="logo" id="logo"></div>
+    <h1>Войти в игру</h1>
+    <input id="codeInput" placeholder="Код комнаты" maxlength="4" autocapitalize="characters">
+    <input id="nameInput" placeholder="Ваше имя" maxlength="16">
+    <button id="joinBtn">Играть</button>
+    <div class="error" id="error"></div>
+  </section>
+
+  <section id="wait" hidden>
+    <h1 id="waitTitle"></h1>
+    <div class="score" id="scoreText"></div>
+    <p class="muted" id="waitText"></p>
+  </section>
+
+  <section id="answer" hidden>
+    <div class="timer" id="timer"></div>
+    <div class="question" id="qtext" style="font-size:1.5rem"></div>
+    <textarea id="answerInput" maxlength="100" placeholder="Ваш ответ…"></textarea>
+    <button id="sendBtn">Отправить</button>
+  </section>
+
+  <section id="sent" hidden>
+    <h1>Ответ отправлен ✓</h1>
+    <p class="muted">Ждём остальных…</p>
+  </section>
+
+  <section id="vote" hidden>
+    <div class="timer" id="timer2"></div>
+    <p class="muted">Выберите самый смешной ответ:</p>
+    <div class="options" id="options"></div>
+  </section>
+
+  <script src="config.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const $ = (id) => document.getElementById(id);
+    let tick = null;
+    let myName = '';
+
+    document.title = GAME.title;
+    $('logo').textContent = GAME.title;
+
+    function buzz(ms) {
+      if (navigator.vibrate) navigator.vibrate(ms);
+    }
+
+    function show(name) {
+      ['join', 'wait', 'answer', 'sent', 'vote'].forEach(s => $(s).hidden = (s !== name));
+    }
+
+    function startTimer(id, seconds) {
+      clearInterval(tick);
+      let left = seconds;
+      const el = $(id);
+      el.classList.remove('urgent');
+      el.textContent = left;
+      tick = setInterval(() => {
+        left = Math.max(0, left - 1);
+        el.textContent = left;
+        if (left <= 10) el.classList.add('urgent');
+        if (left === 0) clearInterval(tick);
+      }, 1000);
+    }
+
+    function showWait(title, score, text) {
+      $('waitTitle').textContent = title;
+      $('scoreText').textContent = score || '';
+      $('waitText').textContent = text || '';
+      show('wait');
+    }
+
+    $('joinBtn').onclick = () => {
+      socket.emit('player:join',
+        { code: $('codeInput').value, name: $('nameInput').value },
+        (res) => {
+          if (!res.ok) { $('error').textContent = res.error; return; }
+          myName = res.name;
+          showWait('Вы в игре, ' + myName + '!', '', 'Ждём, пока ведущий начнёт игру…');
+        });
+    };
+
+    // --- ответы ---
+    socket.on('round:start', ({ question, seconds }) => {
+      $('qtext').textContent = question;
+      $('answerInput').value = '';
+      $('sendBtn').disabled = false;
+      show('answer');
+      startTimer('timer', seconds);
+      buzz(150);
+    });
+
+    $('sendBtn').onclick = () => {
+      const text = $('answerInput').value.trim();
+      if (!text) return;
+      $('sendBtn').disabled = true;
+      socket.emit('player:answer', text, (res) => {
+        if (res && res.ok) show('sent');
+        else $('sendBtn').disabled = false;
+      });
+    };
+
+    // --- голосование ---
+    socket.on('vote:start', ({ seconds, options }) => {
+      const box = $('options');
+      box.innerHTML = '';
+      options.forEach(o => {
+        const btn = document.createElement('button');
+        btn.className = 'option';
+        btn.textContent = o.text; // textContent защищает от вставки HTML
+        btn.onclick = () => {
+          box.querySelectorAll('button').forEach(b => b.disabled = true);
+          socket.emit('player:vote', o.index, (res) => {
+            if (res && res.ok) showWait('Голос принят ✓', '', 'Ждём остальных…');
+            else box.querySelectorAll('button').forEach(b => b.disabled = false);
+          });
+        };
+        box.appendChild(btn);
+      });
+      show('vote');
+      startTimer('timer2', seconds);
+      buzz(150);
+    });
+
+    // --- результаты ---
+    socket.on('round:end', ({ gained, score }) => {
+      clearInterval(tick);
+      showWait(
+        gained > 0 ? '+' + gained + ' очков!' : 'Смотрите на экран!',
+        'Всего очков: ' + score,
+        gained > 0 ? 'Смотрите на экран!' : ''
+      );
+      if (gained > 0) buzz([100, 60, 100]);
+    });
+
+    socket.on('game:final', ({ rank, score, total }) => {
+      clearInterval(tick);
+      showWait('Игра окончена!', 'Ваше место: ' + rank + ' из ' + total, 'Очков: ' + score);
+    });
+
+    socket.on('game:reset', () => {
+      showWait('Новая игра, ' + myName + '!', '', 'Ждём, пока ведущий начнёт игру…');
+    });
+
+    socket.on('room:closed', () => location.reload());
+  </script>
+</body>
+</html>

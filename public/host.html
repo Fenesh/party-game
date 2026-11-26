@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Экран игры</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mute" id="muteBtn" title="Звук">🔊</button>
+
+  <!-- Лобби -->
+  <section id="lobby">
+    <div class="logo" id="logo"></div>
+    <h1>Заходите с телефона на <span id="url"></span></h1>
+    <p class="muted">и введите код комнаты:</p>
+    <div class="code" id="code">····</div>
+    <h2>Игроки (<span id="count">0</span>)</h2>
+    <div class="players" id="players"></div>
+    <div class="rounds" id="rounds">
+      <span class="muted">Раундов:</span>
+      <button class="chip" data-r="3">3</button>
+      <button class="chip" data-r="5">5</button>
+      <button class="chip" data-r="7">7</button>
+      <button class="chip" data-r="10">10</button>
+    </div>
+    <button id="startBtn" disabled>Начать игру</button>
+    <p class="muted" id="hint"></p>
+  </section>
+
+  <!-- Ответы -->
+  <section id="question" hidden>
+    <p class="muted">Раунд <span id="round"></span> из <span id="totalRounds"></span></p>
+    <div class="question" id="qtext"></div>
+    <div class="timer" id="timer"></div>
+    <p class="muted">Ответили: <span id="answered">0</span> из <span id="total">0</span></p>
+  </section>
+
+  <!-- Голосование -->
+  <section id="voting" hidden>
+    <p class="muted">Голосуем за самый смешной ответ!</p>
+    <div class="question" id="qtext2"></div>
+    <div class="timer" id="timer2"></div>
+    <div class="answers" id="voteAnswers"></div>
+    <p class="muted">Проголосовали: <span id="voted">0</span> из <span id="votersTotal">0</span></p>
+  </section>
+
+  <!-- Результаты раунда -->
+  <section id="reveal" hidden>
+    <div class="question" id="qtext3"></div>
+    <div class="answers" id="results"></div>
+    <h2>Очки</h2>
+    <div class="board" id="board"></div>
+    <button id="nextBtn">Следующий раунд</button>
+  </section>
+
+  <!-- Итоги игры -->
+  <section id="final" hidden>
+    <h1>Игра окончена!</h1>
+    <div class="board" id="finalBoard"></div>
+    <button id="againBtn">Играть снова</button>
+  </section>
+
+  <script src="config.js"></script>
+  <script src="sfx.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const $ = (id) => document.getElementById(id);
+    let tick = null;
+    let minPlayers = 2;
+
+    document.title = GAME.title;
+    $('logo').textContent = GAME.title;
+
+    // Браузер разрешает звук только после клика: включаем при первом нажатии
+    document.addEventListener('pointerdown', () => Sfx.init());
+
+    $('muteBtn').onclick = () => {
+      Sfx.init();
+      $('muteBtn').textContent = Sfx.toggle() ? '🔇' : '🔊';
+    };
+
+    function show(name) {
+      ['lobby', 'question', 'voting', 'reveal', 'final'].forEach(s => $(s).hidden = (s !== name));
+    }
+
+    function startTimer(id, seconds) {
+      clearInterval(tick);
+      let left = seconds;
+      const el = $(id);
+      el.classList.remove('urgent');
+      el.textContent = left;
+      tick = setInterval(() => {
+        left = Math.max(0, left - 1);
+        el.textContent = left;
+        if (left <= 10) el.classList.add('urgent');
+        if (left <= 5 && left > 0) Sfx.tick();
+        if (left === 0) clearInterval(tick);
+      }, 1000);
+    }
+
+    function plural(n, forms) {
+      const m10 = n % 10, m100 = n % 100;
+      if (m10 === 1 && m100 !== 11) return forms[0];
+      if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return forms[1];
+      return forms[2];
+    }
+
+    function renderBoard(el, board, medals) {
+      el.innerHTML = '';
+      board.forEach((p, i) => {
+        const row = document.createElement('div');
+        row.className = 'row' + (i === 0 && medals ? ' first' : '');
+        row.style.animationDelay = (i * 0.12) + 's';
+        const name = document.createElement('span');
+        const prefix = medals ? ['🥇 ', '🥈 ', '🥉 '][i] || '' : '';
+        name.textContent = prefix + p.name;
+        const score = document.createElement('span');
+        score.textContent = p.score;
+        row.append(name, score);
+        el.appendChild(row);
+      });
+    }
+
+    function markRounds(n) {
+      document.querySelectorAll('#rounds .chip').forEach(b => {
+        b.classList.toggle('on', Number(b.dataset.r) === n);
+      });
+    }
+
+    document.querySelectorAll('#rounds .chip').forEach(b => {
+      b.onclick = () => socket.emit('host:settings', { rounds: Number(b.dataset.r) });
+    });
+    socket.on('settings:update', ({ rounds }) => markRounds(rounds));
+
+    $('url').textContent = location.host + '/play.html';
+    socket.emit('host:create');
+
+    socket.on('host:created', (data) => {
+      $('code').textContent = data.code;
+      minPlayers = data.minPlayers;
+      markRounds(data.rounds);
+      $('hint').textContent = 'Нужно игроков: минимум ' + minPlayers;
+    });
+
+    socket.on('lobby:update', (names) => {
+      $('count').textContent = names.length;
+      const box = $('players');
+      box.innerHTML = '';
+      names.forEach(n => {
+        const el = document.createElement('div');
+        el.className = 'player';
+        el.textContent = n; // textContent защищает от вставки HTML
+        box.appendChild(el);
+      });
+      const ok = names.length >= minPlayers;
+      $('startBtn').disabled = !ok;
+      $('hint').hidden = ok;
+    });
+
+    $('startBtn').onclick = () => { Sfx.init(); socket.emit('host:next'); };
+    $('nextBtn').onclick = () => socket.emit('host:next');
+    $('againBtn').onclick = () => socket.emit('host:again');
+
+    socket.on('round:start', ({ round, totalRounds, question, seconds }) => {
+      $('round').textContent = round;
+      $('totalRounds').textContent = totalRounds;
+      $('qtext').textContent = question;
+      $('answered').textContent = 0;
+      show('question');
+      startTimer('timer', seconds);
+      Sfx.start();
+    });
+
+    socket.on('round:progress', ({ answered, total }) => {
+      $('answered').textContent = answered;
+      $('total').textContent = total;
+    });
+
+    socket.on('vote:start', ({ question, answers, seconds }) => {
+      $('qtext2').textContent = question;
+      $('voted').textContent = 0;
+      const box = $('voteAnswers');
+      box.innerHTML = '';
+      answers.forEach((a, i) => {
+        const el = document.createElement('div');
+        el.className = 'answer';
+        el.style.animationDelay = (i * 0.12) + 's';
+        el.textContent = a;
+        box.appendChild(el);
+      });
+      show('voting');
+      startTimer('timer2', seconds);
+      Sfx.vote();
+    });
+
+    socket.on('vote:progress', ({ voted, total }) => {
+      $('voted').textContent = voted;
+      $('votersTotal').textContent = total;
+    });
+
+    socket.on('round:results', ({ question, results, board, isLast }) => {
+      clearInterval(tick);
+      $('qtext3').textContent = question;
+
+      const box = $('results');
+      box.innerHTML = '';
+      if (results.length === 0) {
+        const el = document.createElement('div');
+        el.className = 'answer muted';
+        el.textContent = 'Никто не успел ответить';
+        box.appendChild(el);
+      }
+      const best = results.length ? results[0].votes : 0;
+      results.forEach((r, i) => {
+        const el = document.createElement('div');
+        el.className = 'answer' + (best > 0 && r.votes === best ? ' top' : '');
+        el.style.animationDelay = (i * 0.2) + 's';
+        const text = document.createElement('div');
+        text.textContent = r.text;
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = r.author + ' · ' + r.votes + ' ' +
+          plural(r.votes, ['голос', 'голоса', 'голосов']) + ' · +' + r.points;
+        el.append(text, meta);
+        box.appendChild(el);
+      });
+
+      renderBoard($('board'), board, false);
+      $('nextBtn').textContent = isLast ? 'Итоги игры' : 'Следующий раунд';
+      show('reveal');
+      Sfx.result();
+    });
+
+    socket.on('game:final', ({ board }) => {
+      clearInterval(tick);
+      renderBoard($('finalBoard'), board, true);
+      show('final');
+      Sfx.final();
+    });
+
+    socket.on('game:reset', () => show('lobby'));
+  </script>
+</body>
+</html>
